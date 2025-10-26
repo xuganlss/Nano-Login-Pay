@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
+// OpenRouter client for Gemini (Image to Image)
+const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: process.env.OPENROUTER_API_KEY,
   defaultHeaders: {
@@ -10,72 +11,92 @@ const openai = new OpenAI({
   },
 });
 
+// OpenAI client for DALL-E (Text to Image)
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const image = formData.get('image') as File;
+    const image = formData.get('image') as File | null;
     const prompt = formData.get('prompt') as string;
+    const mode = formData.get('mode') as string || 'image-to-image';
 
-    if (!image || !prompt) {
-      return NextResponse.json({ error: 'Image and prompt are required' }, { status: 400 });
+    if (!prompt) {
+      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
     }
 
-    // Convert image to base64
-    const bytes = await image.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const base64Image = buffer.toString('base64');
-    const mimeType = image.type;
-    const dataUrl = `data:${mimeType};base64,${base64Image}`;
+    // For image-to-image mode, image is required
+    if (mode === 'image-to-image' && !image) {
+      return NextResponse.json({ error: 'Image is required for Image to Image mode' }, { status: 400 });
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: "google/gemini-2.5-flash-image-preview",
-      messages: [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "text",
-              "text": `Generate a new image based on this prompt: "${prompt}". Please create and return the actual image, not just a description.`
-            },
-            {
-              "type": "image_url",
-              "image_url": {
-                "url": dataUrl
-              }
-            }
-          ]
-        }
-      ],
-    });
-
-    console.log('Full API Response:', JSON.stringify(completion, null, 2));
-
-    const message = completion.choices[0].message;
-    const response = message.content;
-
-    // Extract image from response based on your screenshot format
+    let dataUrl = null;
     let generatedImage = null;
-    let resultText = response;
+    let resultText = '';
 
-    // Check if the message has images array (as shown in your screenshot)
-    if (message.images && Array.isArray(message.images) && message.images.length > 0) {
-      const imageData = message.images[0].image_url;
-      // Handle both string URLs and objects with url property
-      generatedImage = typeof imageData === 'string' ? imageData : imageData.url;
-      console.log('Found image in message.images:', generatedImage);
+    // Process image if provided (for image-to-image mode)
+    if (image) {
+      const bytes = await image.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const base64Image = buffer.toString('base64');
+      const mimeType = image.type;
+      dataUrl = `data:${mimeType};base64,${base64Image}`;
     }
 
-    // Also check the content if it's an object
-    if (typeof response === 'object' && response !== null) {
-      if (response.images && Array.isArray(response.images) && response.images.length > 0) {
-        const imageData = response.images[0].image_url;
+    // Build content based on mode
+    const content: any[] = [
+      {
+        "type": "text",
+        "text": mode === 'text-to-image'
+          ? `Create a detailed image based on this prompt: "${prompt}". Generate a high-quality, detailed image that matches the description exactly. Please create and return the actual image.`
+          : `Generate a new image based on this prompt: "${prompt}". Please create and return the actual image, not just a description.`
+      }
+    ];
+
+    // Add image to content only for image-to-image mode
+    if (dataUrl && mode === 'image-to-image') {
+      content.push({
+        "type": "image_url",
+        "image_url": {
+          "url": dataUrl
+        }
+      });
+    }
+
+    try {
+      console.log(`Using Gemini for ${mode} generation`);
+
+      const completion = await openrouter.chat.completions.create({
+        model: "google/gemini-2.5-flash-image-preview",
+        messages: [
+          {
+            "role": "user",
+            "content": content
+          }
+        ],
+      });
+
+      console.log('Full Gemini API Response:', JSON.stringify(completion, null, 2));
+
+      const message = completion.choices[0].message;
+      const response = message.content;
+
+      // Extract image from Gemini response
+      if (message.images && Array.isArray(message.images) && message.images.length > 0) {
+        const imageData = message.images[0].image_url;
         generatedImage = typeof imageData === 'string' ? imageData : imageData.url;
-        console.log('Found image in response.images:', generatedImage);
+        console.log('Found image in Gemini response:', generatedImage);
       }
-      // Get text content if it exists
-      if (response.content) {
-        resultText = response.content;
-      }
+
+      resultText = typeof response === 'string' ? response : '';
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      return NextResponse.json({
+        error: 'Failed to process with Gemini',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, { status: 500 });
     }
 
     console.log('Final generatedImage:', generatedImage);
@@ -87,13 +108,15 @@ export async function POST(request: NextRequest) {
       originalImage: dataUrl,
       generatedImage: generatedImage,
       prompt: prompt,
-      hasGeneratedImage: !!generatedImage
+      mode: mode,
+      hasGeneratedImage: !!generatedImage,
+      apiUsed: 'Gemini'
     });
 
   } catch (error) {
     console.error('API Error:', error);
     return NextResponse.json({
-      error: 'Failed to process image',
+      error: 'Failed to process request',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }

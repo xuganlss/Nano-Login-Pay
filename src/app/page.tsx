@@ -12,8 +12,9 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("A futuristic city powered by nano technology, golden hour lighting, ultra detailed...");
   const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<{text: string, image: string, generatedImage?: string, prompt: string, hasGeneratedImage?: boolean} | null>(null);
+  const [result, setResult] = useState<{text: string, image: string, generatedImage?: string, prompt: string, hasGeneratedImage?: boolean, apiUsed?: string} | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'image-to-image' | 'text-to-image'>('image-to-image');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -32,8 +33,14 @@ export default function Home() {
   };
 
   const handleGenerate = async () => {
-    if (!selectedImage || !prompt.trim()) {
-      setError('Please upload an image and enter a prompt');
+    // For text-to-image mode, image is not required
+    if (mode === 'image-to-image' && !selectedImage) {
+      setError('Please upload an image for Image to Image mode');
+      return;
+    }
+
+    if (!prompt.trim()) {
+      setError('Please enter a prompt');
       return;
     }
 
@@ -42,13 +49,17 @@ export default function Home() {
     setResult(null);
 
     try {
-      // Convert data URL back to file for API
-      const response = await fetch(selectedImage);
-      const blob = await response.blob();
-
       const formData = new FormData();
-      formData.append('image', blob);
+
+      // Only add image for image-to-image mode
+      if (mode === 'image-to-image' && selectedImage) {
+        const response = await fetch(selectedImage);
+        const blob = await response.blob();
+        formData.append('image', blob);
+      }
+
       formData.append('prompt', prompt);
+      formData.append('mode', mode);
 
       const apiResponse = await fetch('/api/generate', {
         method: 'POST',
@@ -63,10 +74,11 @@ export default function Home() {
         console.log('Has generated image:', data.hasGeneratedImage);
         setResult({
           text: data.result,
-          image: data.originalImage,
+          image: data.originalImage || '',
           generatedImage: data.generatedImage,
           prompt: data.prompt,
-          hasGeneratedImage: data.hasGeneratedImage
+          hasGeneratedImage: data.hasGeneratedImage,
+          apiUsed: data.apiUsed
         });
       } else {
         setError(data.error || 'Failed to generate image');
@@ -243,11 +255,20 @@ export default function Home() {
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white">
+                  <Button
+                    size="sm"
+                    className={mode === 'image-to-image' ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-700"}
+                    onClick={() => setMode('image-to-image')}
+                  >
                     <Image className="w-4 h-4 mr-2" />
                     Image to Image
                   </Button>
-                  <Button size="sm" variant="outline">
+                  <Button
+                    size="sm"
+                    className={mode === 'text-to-image' ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-700"}
+                    onClick={() => setMode('text-to-image')}
+                  >
+                    <Edit3 className="w-4 h-4 mr-2" />
                     Text to Image
                   </Button>
                 </div>
@@ -260,43 +281,58 @@ export default function Home() {
                   <p className="text-xs text-yellow-700">Enable batch mode to process multiple images at once</p>
                 </div>
 
-                {/* Image Upload Area */}
-                <div
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-orange-300 transition-colors"
-                  onClick={handleAddImageClick}
-                >
-                  {selectedImage ? (
-                    <div className="space-y-2">
-                      <img src={selectedImage} alt="Uploaded" className="max-h-32 mx-auto rounded-lg" />
-                      <p className="text-sm text-gray-600">Click to change image</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-4xl mb-2">+</div>
-                      <p className="text-sm text-gray-600">Add Image</p>
-                      <p className="text-xs text-gray-500">Max 50MB</p>
-                    </>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                  />
-                </div>
+                {/* Image Upload Area - Only show in Image to Image mode */}
+                {mode === 'image-to-image' && (
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-orange-300 transition-colors"
+                    onClick={handleAddImageClick}
+                  >
+                    {selectedImage ? (
+                      <div className="space-y-2">
+                        <img src={selectedImage} alt="Uploaded" className="max-h-32 mx-auto rounded-lg" />
+                        <p className="text-sm text-gray-600">Click to change image</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-4xl mb-2">+</div>
+                        <p className="text-sm text-gray-600">Add Image</p>
+                        <p className="text-xs text-gray-500">Max 50MB</p>
+                      </>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                  </div>
+                )}
+
+                {/* Text to Image mode info */}
+                {mode === 'text-to-image' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                    <div className="text-2xl mb-2">✨</div>
+                    <h4 className="text-lg font-semibold text-blue-900 mb-2">Text to Image Mode</h4>
+                    <p className="text-sm text-blue-700">Simply describe what you want to create in the prompt below, and AI will generate it from scratch!</p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <MessageSquare className="w-4 h-4 inline mr-1" />
-                    Main Prompt
+                    {mode === 'text-to-image' ? 'Describe Your Image' : 'Main Prompt'}
                   </label>
                   <textarea
                     className="w-full p-3 border border-gray-300 rounded-lg resize-none"
                     rows={3}
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="A futuristic city powered by nano technology, golden hour lighting, ultra detailed..."
+                    placeholder={
+                      mode === 'text-to-image'
+                        ? "A majestic dragon flying over a medieval castle at sunset, digital art style, highly detailed..."
+                        : "A futuristic city powered by nano technology, golden hour lighting, ultra detailed..."
+                    }
                   />
                   <Button size="sm" variant="ghost" className="mt-2 text-xs">
                     Copy
@@ -368,16 +404,18 @@ export default function Home() {
 
                         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                           <div className="flex items-center justify-between">
-                            <p className="text-sm text-green-800">
-                              ✅ <strong>成功生成图片!</strong> 您的AI创作已完成
-                            </p>
+                            <div>
+                              <p className="text-sm text-green-800">
+                                ✅ <strong>Successfully generated!</strong> Your AI creation is complete
+                              </p>
+                            </div>
                             <Button
                               onClick={handleDownloadImage}
                               size="sm"
                               className="bg-green-600 hover:bg-green-700 text-white"
                             >
                               <Download className="w-4 h-4 mr-2" />
-                              下载图片
+                              Download
                             </Button>
                           </div>
                         </div>
@@ -398,7 +436,7 @@ export default function Home() {
 
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                           <p className="text-sm text-yellow-800 text-center">
-                            💡 <strong>图片分析模式:</strong> 当前显示的是AI对图片的分析结果。要生成新图片，请尝试更具体的图片编辑指令。
+                            💡 <strong>Analysis mode:</strong> Currently showing AI analysis results. Try more specific image editing instructions to generate new images.
                           </p>
                         </div>
                       </div>
