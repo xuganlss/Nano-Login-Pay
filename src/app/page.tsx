@@ -1,11 +1,106 @@
+"use client";
+
+import { useState, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ChevronDown, Sparkles, Zap, MessageSquare, Image, Target, Layers, Edit3, Repeat, Star, Menu } from "lucide-react";
+import { ChevronDown, Sparkles, Zap, MessageSquare, Image, Target, Layers, Edit3, Repeat, Star, Menu, Upload, Loader2, Download } from "lucide-react";
 
 export default function Home() {
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("A futuristic city powered by nano technology, golden hour lighting, ultra detailed...");
+  const [isLoading, setIsLoading] = useState(false);
+  const [result, setResult] = useState<{text: string, image: string, generatedImage?: string, prompt: string, hasGeneratedImage?: boolean} | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setSelectedImage(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAddImageClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleGenerate = async () => {
+    if (!selectedImage || !prompt.trim()) {
+      setError('Please upload an image and enter a prompt');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      // Convert data URL back to file for API
+      const response = await fetch(selectedImage);
+      const blob = await response.blob();
+
+      const formData = new FormData();
+      formData.append('image', blob);
+      formData.append('prompt', prompt);
+
+      const apiResponse = await fetch('/api/generate', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await apiResponse.json();
+
+      if (data.success) {
+        console.log('Frontend received data:', data);
+        console.log('Generated image URL:', data.generatedImage);
+        console.log('Has generated image:', data.hasGeneratedImage);
+        setResult({
+          text: data.result,
+          image: data.originalImage,
+          generatedImage: data.generatedImage,
+          prompt: data.prompt,
+          hasGeneratedImage: data.hasGeneratedImage
+        });
+      } else {
+        setError(data.error || 'Failed to generate image');
+      }
+    } catch (err) {
+      setError('Network error occurred');
+      console.error('Generation error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownloadImage = () => {
+    if (!result?.generatedImage) return;
+
+    try {
+      // Create a link element
+      const link = document.createElement('a');
+      link.href = result.generatedImage;
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      link.download = `nano-banana-generated-${timestamp}.png`;
+
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Download failed:', error);
+      setError('Failed to download image');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-yellow-50 to-orange-50">
       {/* Header */}
@@ -165,10 +260,30 @@ export default function Home() {
                   <p className="text-xs text-yellow-700">Enable batch mode to process multiple images at once</p>
                 </div>
 
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                  <div className="text-4xl mb-2">+</div>
-                  <p className="text-sm text-gray-600">Add Image</p>
-                  <p className="text-xs text-gray-500">Max 50MB</p>
+                {/* Image Upload Area */}
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-orange-300 transition-colors"
+                  onClick={handleAddImageClick}
+                >
+                  {selectedImage ? (
+                    <div className="space-y-2">
+                      <img src={selectedImage} alt="Uploaded" className="max-h-32 mx-auto rounded-lg" />
+                      <p className="text-sm text-gray-600">Click to change image</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-4xl mb-2">+</div>
+                      <p className="text-sm text-gray-600">Add Image</p>
+                      <p className="text-xs text-gray-500">Max 50MB</p>
+                    </>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
                 </div>
 
                 <div>
@@ -179,6 +294,8 @@ export default function Home() {
                   <textarea
                     className="w-full p-3 border border-gray-300 rounded-lg resize-none"
                     rows={3}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
                     placeholder="A futuristic city powered by nano technology, golden hour lighting, ultra detailed..."
                   />
                   <Button size="sm" variant="ghost" className="mt-2 text-xs">
@@ -186,9 +303,28 @@ export default function Home() {
                   </Button>
                 </div>
 
-                <Button className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium py-3">
-                  <Zap className="w-4 h-4 mr-2" />
-                  Generate Now
+                {error && (
+                  <div className="bg-red-100 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700">{error}</p>
+                  </div>
+                )}
+
+                <Button
+                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium py-3"
+                  onClick={handleGenerate}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 mr-2" />
+                      Generate Now
+                    </>
+                  )}
                 </Button>
               </div>
             </Card>
@@ -205,12 +341,78 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-lg p-12 text-center">
-                <div className="w-20 h-20 bg-gray-200 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                  <Image className="w-8 h-8 text-gray-400" />
-                </div>
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">Ready for instant generation</h4>
-                <p className="text-gray-600">Enter your prompt and unleash the power</p>
+              <div className="bg-gray-50 rounded-lg p-12 text-center min-h-[300px] flex flex-col justify-center">
+                {isLoading ? (
+                  <div className="space-y-4">
+                    <Loader2 className="w-12 h-12 text-orange-500 mx-auto animate-spin" />
+                    <h4 className="text-lg font-semibold text-gray-900">Processing your image...</h4>
+                    <p className="text-gray-600">Nano Banana AI is working its magic</p>
+                  </div>
+                ) : result ? (
+                  <div className="space-y-4">
+                    {result.hasGeneratedImage && result.generatedImage && typeof result.generatedImage === 'string' && (result.generatedImage.startsWith('data:') || result.generatedImage.startsWith('http')) ? (
+                      <div className="space-y-4">
+                        {/* Generated Image Only */}
+                        <div className="bg-white rounded-lg p-4 border">
+                          <h4 className="text-lg font-semibold text-gray-900 mb-4 text-center">✨ Generated Image</h4>
+                          <img
+                            src={result.generatedImage}
+                            alt="Generated"
+                            className="w-full max-h-96 object-contain rounded border mx-auto"
+                            onError={(e) => {
+                              console.error('Image load error:', e);
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        </div>
+
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-green-800">
+                              ✅ <strong>成功生成图片!</strong> 您的AI创作已完成
+                            </p>
+                            <Button
+                              onClick={handleDownloadImage}
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              下载图片
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* AI Analysis when no image is generated */}
+                        <div className="bg-white rounded-lg p-4 border">
+                          <h4 className="text-lg font-semibold text-gray-900 mb-2">🤖 AI Analysis</h4>
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap text-left overflow-y-auto max-h-48">{result.text}</div>
+                          {result.generatedImage && (
+                            <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
+                              <strong>Debug - Generated Image Data:</strong>
+                              <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify(result.generatedImage, null, 2)}</pre>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                          <p className="text-sm text-yellow-800 text-center">
+                            💡 <strong>图片分析模式:</strong> 当前显示的是AI对图片的分析结果。要生成新图片，请尝试更具体的图片编辑指令。
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 bg-gray-200 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                      <Image className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <h4 className="text-lg font-semibold text-gray-900 mb-2">Ready for instant generation</h4>
+                    <p className="text-gray-600">Enter your prompt and unleash the power</p>
+                  </>
+                )}
               </div>
             </Card>
           </div>
