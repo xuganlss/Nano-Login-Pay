@@ -8,22 +8,32 @@ interface GeminiMessageWithImages {
 }
 
 // OpenRouter client for Gemini (Image to Image)
-const openrouter = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    "HTTP-Referer": "https://nanobanana.ai",
-    "X-Title": "Nano Banana AI",
-  },
-});
+function createOpenRouterClient() {
+  return new OpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: process.env.OPENROUTER_API_KEY,
+    defaultHeaders: {
+      "HTTP-Referer": "https://nanobanana.ai",
+      "X-Title": "Nano Banana AI",
+    },
+  });
+}
 
 // OpenAI client for DALL-E (Text to Image)
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function createOpenAIClient() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
+    // Check for required environment variables
+    if (!process.env.OPENROUTER_API_KEY) {
+      return NextResponse.json({ error: 'OPENROUTER_API_KEY is not configured' }, { status: 500 });
+    }
+
+    const openrouter = createOpenRouterClient();
     const formData = await request.formData();
     const image = formData.get('image') as File | null;
     const prompt = formData.get('prompt') as string;
