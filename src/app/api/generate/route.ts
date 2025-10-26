@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
+// Type for Gemini response with images
+interface GeminiMessageWithImages {
+  content: string | null;
+  images?: Array<{ image_url: string | { url: string } }>;
+}
+
 // OpenRouter client for Gemini (Image to Image)
 const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
@@ -46,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build content based on mode
-    const content: any[] = [
+    const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = [
       {
         "type": "text",
         "text": mode === 'text-to-image'
@@ -84,8 +90,9 @@ export async function POST(request: NextRequest) {
       const response = message.content;
 
       // Extract image from Gemini response
-      if (message.images && Array.isArray(message.images) && message.images.length > 0) {
-        const imageData = message.images[0].image_url;
+      const messageWithImages = message as GeminiMessageWithImages;
+      if (messageWithImages.images && Array.isArray(messageWithImages.images) && messageWithImages.images.length > 0) {
+        const imageData = messageWithImages.images[0].image_url;
         generatedImage = typeof imageData === 'string' ? imageData : imageData.url;
         console.log('Found image in Gemini response:', generatedImage);
       }
