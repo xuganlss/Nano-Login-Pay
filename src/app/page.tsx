@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ChevronDown, Sparkles, Zap, MessageSquare, Image, Target, Layers, Edit3, Repeat, Star, Menu, Upload, Loader2, Download } from "lucide-react";
+import { ChevronDown, Sparkles, Zap, MessageSquare, Image, Target, Layers, Edit3, Repeat, Star, Menu, Upload, Loader2, Download, LogOut, User } from "lucide-react";
+import { createClient } from '@/lib/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -15,7 +17,35 @@ export default function Home() {
   const [result, setResult] = useState<{text: string, image: string, generatedImage?: string, prompt: string, hasGeneratedImage?: boolean, apiUsed?: string} | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'image-to-image' | 'text-to-image'>('image-to-image');
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const supabase = createClient();
+
+  // 检查用户登录状态
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      setUserLoading(false);
+    };
+
+    checkUser();
+
+    // 监听认证状态变化
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      setUserLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase]);
+
+  // 退出登录
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -149,13 +179,47 @@ export default function Home() {
 
             {/* Action Buttons */}
             <div className="flex items-center space-x-4">
-              <Button variant="outline" className="hidden sm:inline-flex">
-                Sign In
-              </Button>
-              <Button className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium">
-                <Sparkles className="w-4 h-4 mr-2" />
-                Launch Now
-              </Button>
+              {userLoading ? (
+                <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full"></div>
+              ) : user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="flex items-center space-x-2 hover:bg-gray-100 rounded-full p-2 transition-colors">
+                    {user.user_metadata?.avatar_url ? (
+                      <img
+                        src={user.user_metadata.avatar_url}
+                        alt="用户头像"
+                        className="w-8 h-8 rounded-full"
+                      />
+                    ) : (
+                      <User className="w-8 h-8 p-1 bg-gray-200 rounded-full" />
+                    )}
+                    <span className="hidden sm:inline text-gray-700 font-medium">
+                      {user.user_metadata?.user_name || user.email?.split('@')[0] || 'User'}
+                    </span>
+                    <ChevronDown className="w-4 h-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => window.location.href = '/dashboard'}>
+                      <User className="w-4 h-4 mr-2" />
+                      Dashboard
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <>
+                  <Button variant="outline" className="hidden sm:inline-flex">
+                    <a href="/login">Sign In</a>
+                  </Button>
+                  <Button className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium">
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Launch Now
+                  </Button>
+                </>
+              )}
               <Button variant="ghost" size="sm" className="md:hidden">
                 <Menu className="w-5 h-5" />
               </Button>
@@ -259,6 +323,7 @@ export default function Home() {
                     size="sm"
                     className={mode === 'image-to-image' ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-700"}
                     onClick={() => setMode('image-to-image')}
+                    disabled={!user}
                   >
                     <Image className="w-4 h-4 mr-2" />
                     Image to Image
@@ -267,6 +332,7 @@ export default function Home() {
                     size="sm"
                     className={mode === 'text-to-image' ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-700"}
                     onClick={() => setMode('text-to-image')}
+                    disabled={!user}
                   >
                     <Edit3 className="w-4 h-4 mr-2" />
                     Text to Image
@@ -339,6 +405,14 @@ export default function Home() {
                   </Button>
                 </div>
 
+                {!user && (
+                  <div className="bg-blue-100 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-700 text-center">
+                      🔐 Please sign in first to use AI image generation features
+                    </p>
+                  </div>
+                )}
+
                 {error && (
                   <div className="bg-red-100 border border-red-200 rounded-lg p-3">
                     <p className="text-sm text-red-700">{error}</p>
@@ -348,12 +422,17 @@ export default function Home() {
                 <Button
                   className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium py-3"
                   onClick={handleGenerate}
-                  disabled={isLoading}
+                  disabled={isLoading || !user}
                 >
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Generating...
+                    </>
+                  ) : !user ? (
+                    <>
+                      <User className="w-4 h-4 mr-2" />
+                      Please Login First
                     </>
                   ) : (
                     <>
