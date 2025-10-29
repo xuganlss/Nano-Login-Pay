@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 
+// 强制动态渲染，防止预渲染
+export const dynamic = 'force-dynamic'
+
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)

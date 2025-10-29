@@ -3,6 +3,9 @@
 import { createClient } from '@/lib/supabase/client'
 import { Github } from 'lucide-react'
 
+// 强制动态渲染，防止预渲染
+export const dynamic = 'force-dynamic'
+
 export default function LoginPage() {
   const supabase = createClient()
 
