@@ -198,7 +198,7 @@ export default function Home() {
                     </span>
                     <ChevronDown className="w-4 h-4" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent className="right-0">
                     <DropdownMenuItem onClick={() => window.location.href = '/dashboard'}>
                       <User className="w-4 h-4 mr-2" />
                       Dashboard
