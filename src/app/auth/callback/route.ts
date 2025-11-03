@@ -16,8 +16,9 @@ export async function GET(request: NextRequest) {
         const isLocalEnv = process.env.NODE_ENV === 'development'
 
         if (isLocalEnv) {
-          // For development, always use localhost instead of 0.0.0.0
-          return NextResponse.redirect(`http://localhost:3000${next}`)
+          // For development, use the configured base URL or localhost:3003
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3003'
+          return NextResponse.redirect(`${baseUrl}${next}`)
         } else {
           const forwardedHost = request.headers.get('x-forwarded-host')
           if (forwardedHost) {
@@ -33,5 +34,6 @@ export async function GET(request: NextRequest) {
   }
 
   // return the user to an error page with instructions
-  return NextResponse.redirect(`http://localhost:3000/auth/auth-code-error`)
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3003'
+  return NextResponse.redirect(`${baseUrl}/auth/auth-code-error`)
 }

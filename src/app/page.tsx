@@ -19,6 +19,11 @@ export default function Home() {
   const [mode, setMode] = useState<'image-to-image' | 'text-to-image'>('image-to-image');
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [userLoading, setUserLoading] = useState(true);
+  const [userCredits, setUserCredits] = useState<{
+    total_credits: number;
+    used_credits: number;
+    available_credits: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
@@ -28,6 +33,11 @@ export default function Home() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setUserLoading(false);
+
+      // 如果用户已登录，获取积分信息
+      if (user) {
+        fetchUserCredits();
+      }
     };
 
     checkUser();
@@ -36,10 +46,30 @@ export default function Home() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
       setUserLoading(false);
+
+      // 如果用户已登录，获取积分信息
+      if (session?.user) {
+        fetchUserCredits();
+      } else {
+        setUserCredits(null);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, [supabase]);
+
+  // 获取用户积分
+  const fetchUserCredits = async () => {
+    try {
+      const response = await fetch('/api/credits');
+      if (response.ok) {
+        const credits = await response.json();
+        setUserCredits(credits);
+      }
+    } catch (error) {
+      console.error('Failed to fetch credits:', error);
+    }
+  };
 
   // 退出登录
   const handleSignOut = async () => {
@@ -71,6 +101,17 @@ export default function Home() {
 
     if (!prompt.trim()) {
       setError('Please enter a prompt');
+      return;
+    }
+
+    if (!user) {
+      setError('Please sign in to use AI generation features');
+      return;
+    }
+
+    // 检查积分
+    if (!userCredits || userCredits.available_credits < 1) {
+      setError('Insufficient credits. Please purchase credits to continue generating images.');
       return;
     }
 
@@ -110,6 +151,10 @@ export default function Home() {
           hasGeneratedImage: data.hasGeneratedImage,
           apiUsed: data.apiUsed
         });
+
+        // 消耗积分并刷新积分信息
+        await useCredits(1);
+        await fetchUserCredits();
       } else {
         setError(data.error || 'Failed to generate image');
       }
@@ -118,6 +163,28 @@ export default function Home() {
       console.error('Generation error:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 使用积分
+  const useCredits = async (amount: number) => {
+    try {
+      const response = await fetch('/api/credits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'use',
+          amount: amount
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to use credits');
+      }
+    } catch (error) {
+      console.error('Error using credits:', error);
     }
   };
 
@@ -173,7 +240,7 @@ export default function Home() {
                   <DropdownMenuItem>FAQ</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <a href="#" className="text-gray-700 hover:text-orange-600 transition-colors">Pricing</a>
+              <a href="/pricing" className="text-gray-700 hover:text-orange-600 transition-colors">Pricing</a>
               <a href="#" className="text-gray-700 hover:text-orange-600 transition-colors">API</a>
             </nav>
 
@@ -182,33 +249,66 @@ export default function Home() {
               {userLoading ? (
                 <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full"></div>
               ) : user ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="flex items-center space-x-2 hover:bg-gray-100 rounded-full p-2 transition-colors">
-                    {user.user_metadata?.avatar_url ? (
-                      <img
-                        src={user.user_metadata.avatar_url}
-                        alt="用户头像"
-                        className="w-8 h-8 rounded-full"
-                      />
-                    ) : (
-                      <User className="w-8 h-8 p-1 bg-gray-200 rounded-full" />
-                    )}
-                    <span className="hidden sm:inline text-gray-700 font-medium">
-                      {user.user_metadata?.user_name || user.email?.split('@')[0] || 'User'}
-                    </span>
-                    <ChevronDown className="w-4 h-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="right-0">
-                    <DropdownMenuItem onClick={() => window.location.href = '/dashboard'}>
-                      <User className="w-4 h-4 mr-2" />
-                      Dashboard
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleSignOut}>
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Sign Out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="flex items-center space-x-3">
+                  {/* Credits Display with Buy Credits */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="flex items-center space-x-2 bg-gradient-to-r from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 border border-green-200 rounded-full px-3 py-1.5 transition-colors">
+                      <div className="w-5 h-5 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center">
+                        <span className="text-xs font-bold text-white">+</span>
+                      </div>
+                      <div className="flex flex-col items-start">
+                        <span className="text-xs text-green-700 font-semibold">
+                          {userCredits ? userCredits.available_credits : '...'} credits
+                        </span>
+                        {userCredits && userCredits.available_credits === 0 && (
+                          <span className="text-xs text-red-600">Low balance</span>
+                        )}
+                      </div>
+                      <ChevronDown className="w-3 h-3 text-green-600" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="right-0">
+                      <DropdownMenuItem onClick={() => window.location.href = '/pricing'}>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Buy Credits
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => window.location.href = '/dashboard'}>
+                        <User className="w-4 h-4 mr-2" />
+                        View Usage
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {/* User Profile */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="flex items-center space-x-2 hover:bg-gray-100 rounded-full p-2 transition-colors">
+                      {user.user_metadata?.avatar_url ? (
+                        <img
+                          src={user.user_metadata.avatar_url}
+                          alt="用户头像"
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <User className="w-8 h-8 p-1 bg-gray-200 rounded-full" />
+                      )}
+                      <div className="hidden sm:flex flex-col items-start">
+                        <span className="text-gray-700 font-medium text-sm">
+                          {user.user_metadata?.user_name || user.email?.split('@')[0] || 'User'}
+                        </span>
+                      </div>
+                      <ChevronDown className="w-4 h-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="right-0">
+                      <DropdownMenuItem onClick={() => window.location.href = '/dashboard'}>
+                        <User className="w-4 h-4 mr-2" />
+                        Dashboard
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleSignOut}>
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Sign Out
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               ) : (
                 <>
                   <Button variant="outline" className="hidden sm:inline-flex">
@@ -321,18 +421,38 @@ export default function Home() {
                 <div className="flex items-center justify-between">
                   <Button
                     size="sm"
-                    className={mode === 'image-to-image' ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-700"}
+                    className={`transition-all duration-300 ${
+                      mode === 'image-to-image'
+                        ? (userCredits && userCredits.available_credits === 0
+                            ? "bg-red-400 hover:bg-red-500 text-white cursor-not-allowed"
+                            : "bg-orange-500 hover:bg-orange-600 text-white"
+                          )
+                        : (userCredits && userCredits.available_credits === 0
+                            ? "bg-gray-300 hover:bg-gray-400 text-gray-600 cursor-not-allowed"
+                            : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                          )
+                    }`}
                     onClick={() => setMode('image-to-image')}
-                    disabled={!user}
+                    disabled={!user || (userCredits && userCredits.available_credits === 0)}
                   >
                     <Image className="w-4 h-4 mr-2" />
                     Image to Image
                   </Button>
                   <Button
                     size="sm"
-                    className={mode === 'text-to-image' ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-700"}
+                    className={`transition-all duration-300 ${
+                      mode === 'text-to-image'
+                        ? (userCredits && userCredits.available_credits === 0
+                            ? "bg-red-400 hover:bg-red-500 text-white cursor-not-allowed"
+                            : "bg-orange-500 hover:bg-orange-600 text-white"
+                          )
+                        : (userCredits && userCredits.available_credits === 0
+                            ? "bg-gray-300 hover:bg-gray-400 text-gray-600 cursor-not-allowed"
+                            : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                          )
+                    }`}
                     onClick={() => setMode('text-to-image')}
-                    disabled={!user}
+                    disabled={!user || (userCredits && userCredits.available_credits === 0)}
                   >
                     <Edit3 className="w-4 h-4 mr-2" />
                     Text to Image
@@ -400,9 +520,34 @@ export default function Home() {
                         : "A futuristic city powered by nano technology, golden hour lighting, ultra detailed..."
                     }
                   />
-                  <Button size="sm" variant="ghost" className="mt-2 text-xs">
-                    Copy
-                  </Button>
+                  <div className="flex items-center justify-between mt-2">
+                    <Button size="sm" variant="ghost" className="text-xs">
+                      Copy
+                    </Button>
+                    {user && userCredits && (
+                      <div className={`text-xs transition-all duration-300 ${
+                        userCredits.available_credits > 0
+                          ? "text-orange-600"
+                          : "text-red-600 font-semibold animate-pulse"
+                      }`}>
+                        {userCredits.available_credits > 0 ? (
+                          <span>
+                            💡 Each generation uses 1 credit ({userCredits.available_credits} available)
+                          </span>
+                        ) : (
+                          <span className="flex items-center">
+                            ⚠️ No credits available -
+                            <button
+                              onClick={() => window.location.href = '/pricing'}
+                              className="ml-1 underline hover:no-underline font-bold"
+                            >
+                              purchase more to continue
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {!user && (
@@ -420,9 +565,15 @@ export default function Home() {
                 )}
 
                 <Button
-                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium py-3"
+                  className={`w-full font-medium py-3 transition-all duration-300 ${
+                    !user
+                      ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white"
+                      : userCredits && userCredits.available_credits === 0
+                        ? "bg-gradient-to-r from-red-400 to-red-500 hover:from-red-500 hover:to-red-600 text-white cursor-not-allowed"
+                        : "bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white"
+                  }`}
                   onClick={handleGenerate}
-                  disabled={isLoading || !user}
+                  disabled={isLoading || !user || (userCredits && userCredits.available_credits === 0)}
                 >
                   {isLoading ? (
                     <>
@@ -433,6 +584,11 @@ export default function Home() {
                     <>
                       <User className="w-4 h-4 mr-2" />
                       Please Login First
+                    </>
+                  ) : userCredits && userCredits.available_credits === 0 ? (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      No Credits Available
                     </>
                   ) : (
                     <>
